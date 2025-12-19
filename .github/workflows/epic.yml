@@ -2,7 +2,8 @@ name: Epic Free Games to Discord
 
 on:
   schedule:
-    - cron: '15 15 * * 4'   # czwartek 17:00 PL
+    # czwartek 17:15 PL = 15:15 UTC
+    - cron: '15 15 * * 4'
   workflow_dispatch:
 
 jobs:
@@ -10,9 +11,8 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: true
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       - name: Run PowerShell script
         shell: pwsh
@@ -22,9 +22,12 @@ jobs:
           ./epic.ps1
 
       - name: Commit state
+        shell: pwsh
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add state.json
-          git diff --cached --quiet || git commit -m "Update Epic Games state"
-          git push
+          if (Test-Path state.json) {
+            git add state.json
+            git diff --cached --quiet || git commit -m "Update Epic Games state"
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          }
