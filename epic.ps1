@@ -4,7 +4,7 @@ $webhook = $env:DISCORD_WEBHOOK
 $api = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=pl&country=PL"
 $stateFile = "state.json"
 
-# ===== Wczytaj poprzedni stan =====
+# ===== Stan =====
 if (Test-Path $stateFile) {
     $state = Get-Content $stateFile | ConvertFrom-Json
 } else {
@@ -14,7 +14,7 @@ if (Test-Path $stateFile) {
     }
 }
 
-# ===== Pobierz dane =====
+# ===== Dane =====
 $data = Invoke-RestMethod -Uri $api
 $games = $data.data.Catalog.searchStore.elements
 $now = Get-Date
@@ -23,6 +23,17 @@ $current = @()
 $upcoming = @()
 
 foreach ($game in $games) {
+
+    # ❌ pomijamy DLC, dodatki, bundle
+    if ($game.offerType -ne "BASE_GAME") { continue }
+    if (-not $game.price) { continue }
+
+    $price = $game.price.totalPrice
+
+    # MUSI BYĆ 100% OFF
+    if ($price.discountPercentage -ne 100) { continue }
+    if ($price.discountPrice -ne 0) { continue }
+
     if ($null -eq $game.promotions) { continue }
 
     foreach ($promo in $game.promotions.promotionalOffers) {
@@ -40,20 +51,20 @@ foreach ($game in $games) {
     }
 }
 
-# ===== Wykryj NOWE =====
+# ===== Nowe =====
 $newCurrent = $current | Where-Object { $_.id -notin $state.current }
 $newUpcoming = $upcoming | Where-Object { $_.id -notin $state.upcoming }
 
 if ($newCurrent.Count -eq 0 -and $newUpcoming.Count -eq 0) {
-    Write-Output "Brak nowych gier"
+    Write-Output "Brak nowych darmowych gier"
     exit 0
 }
 
-# ===== Buduj wiadomość =====
+# ===== Wiadomość =====
 $msg = ""
 
 if ($newCurrent.Count -gt 0) {
-    $msg += "**🎮 NOWE darmowe gry (już dostępne):**`n`n"
+    $msg += "**🎮 Darmowe gry do odebrania (0 zł):**`n`n"
     foreach ($g in $newCurrent) {
         $url = "https://store.epicgames.com/pl/p/$($g.productSlug)"
         $msg += "• **$($g.title)**`n$url`n`n"
@@ -73,7 +84,8 @@ Invoke-RestMethod -Uri $webhook -Method Post -ContentType "application/json" -Bo
     content = $msg
 } | ConvertTo-Json)
 
-# ===== Zapisz nowy stan =====
+# ===== Zapis =====
 $state.current = $current.id
 $state.upcoming = $upcoming.id
 $state | ConvertTo-Json | Set-Content $stateFile
+
