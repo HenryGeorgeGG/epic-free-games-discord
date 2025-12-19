@@ -2,7 +2,7 @@ name: Epic Free Games to Discord
 
 on:
   schedule:
-    - cron: '0 18 * * *'   # codziennie 18:00 (UTC)
+    - cron: '0 15 * * 4'   # codziennie 17:00 (UTC)
   workflow_dispatch:
 
 jobs:
