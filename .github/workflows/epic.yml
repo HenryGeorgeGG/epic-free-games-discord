@@ -2,8 +2,8 @@ name: Epic Free Games to Discord
 
 on:
   schedule:
-    # czwartek 17:15 PL = 15:15 UTC
-    - cron: '15 15 * * 4'
+    # codziennie 17:15 PL = 15:15 UTC
+    - cron: '15 15 * * *'
   workflow_dispatch:
 
 jobs:
@@ -20,3 +20,14 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
           ./epic.ps1
+
+      - name: Commit state
+        shell: pwsh
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          if (Test-Path state.json) {
+            git add state.json
+            git diff --cached --quiet || git commit -m "Update Epic Games state"
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          }
