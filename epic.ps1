@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-# ===== KONFIGURACJA =====
+# ================== KONFIGURACJA ==================
 $webhook = $env:DISCORD_WEBHOOK
 if (-not $webhook) {
     Write-Error "Brak zmiennej DISCORD_WEBHOOK"
@@ -8,39 +8,39 @@ if (-not $webhook) {
 }
 
 $stateFile = "state.json"
-$knownIds = @()
 
+# ================== WCZYTANIE STANU ==================
+$knownGames = @{}
 if (Test-Path $stateFile) {
-    $knownIds = Get-Content $stateFile | ConvertFrom-Json
-    if ($null -eq $knownIds) { $knownIds = @() }
+    $knownGames = Get-Content $stateFile | ConvertFrom-Json
+    if ($null -eq $knownGames) { $knownGames = @{} }
 }
 
-# ===== POBRANIE DANYCH Z EPIC =====
+# ================== POBRANIE DANYCH ==================
 $url = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=pl&country=PL&allowCountries=PL"
 $data = Invoke-RestMethod -Uri $url -Method Get
 
 $games = $data.data.Catalog.searchStore.elements
 $now = Get-Date
-
 $newFreeGames = @()
 
+# ================== FILTROWANIE ==================
 foreach ($game in $games) {
     Write-Output "Sprawdzam grę: $($game.title)"
 
-    # Pomijamy DLC
     if ($game.offerType -eq "DLC") {
         Write-Output "  Pomijam – DLC"
         continue
     }
 
-    $promotions = $game.promotions.promotionalOffers
-    if (-not $promotions) {
+    $promoBlocks = $game.promotions.promotionalOffers
+    if (-not $promoBlocks) {
         Write-Output "  Pomijam – brak promocji"
         continue
     }
 
-    foreach ($promoBlock in $promotions) {
-        foreach ($promo in $promoBlock.promotionalOffers) {
+    foreach ($block in $promoBlocks) {
+        foreach ($promo in $block.promotionalOffers) {
 
             $start = Get-Date $promo.startDate
             $end   = Get-Date $promo.endDate
@@ -50,35 +50,36 @@ foreach ($game in $games) {
             }
 
             $price = $game.price.totalPrice
-            if (-not $price) {
+            if (-not $price -or $price.discountPrice -ne 0) {
+                Write-Output "  Pomijam – cena ≠ 0"
                 continue
             }
 
-            if ($price.discountPrice -ne 0) {
-                Write-Output "  Pomijam – cena końcowa ≠ 0"
+            if ($knownGames.ContainsKey($game.id)) {
+                Write-Output "  Pomijam – już wysłana ($($knownGames[$game.id]))"
                 continue
             }
 
-            if ($knownIds -contains $game.id) {
-                Write-Output "  Pomijam – już wysłana"
-                continue
+            Write-Output "NOWA DARMOWA GRA"
+            $newFreeGames += @{
+                Game = $game
+                End  = $end
             }
-
-            Write-Output "  ✔ NOWA DARMOWA GRA"
-            $newFreeGames += $game
         }
     }
 }
 
-# ===== WYSYŁKA NA DISCORD =====
-foreach ($game in $newFreeGames) {
+# ================== WYSYŁKA NA DISCORD ==================
+foreach ($item in $newFreeGames) {
+
+    $game = $item.Game
+    $end  = $item.End
 
     $slug = $game.productSlug
-    if (-not $slug) {
-        $slug = $game.urlSlug
-    }
+    if (-not $slug) { $slug = $game.urlSlug }
 
     $link = "https://store.epicgames.com/pl/p/$slug"
+    $endText = $end.ToString("dd.MM.yyyy HH:mm")
 
     $image = $null
     foreach ($img in $game.keyImages) {
@@ -88,25 +89,37 @@ foreach ($game in $newFreeGames) {
         }
     }
 
+    # ===== ŁADNY EMBED =====
     $payload = @{
         embeds = @(
             @{
-                title = "Darmowa gra na Epic Games"
-                description = "**$($game.title)** jest teraz dostępna **ZA DARMO**"
+                title = "Darmowa gra na Epic Games Store"
                 url = $link
-                color = 5763719
+                color = 3066993
+                description = @"
+**$($game.title)**
+
+ **Cena:** Darmowa  
+ **Dostępna do:** $endText  
+
+ Kliknij tytuł lub grafikę, aby odebrać grę
+"@
                 image = @{ url = $image }
-                footer = @{ text = "Epic Games Store" }
+                footer = @{
+                    text = "Epic Games Store • Darmowe gry"
+                }
+                timestamp = (Get-Date).ToString("o")
             }
         )
     } | ConvertTo-Json -Depth 10
 
     Invoke-RestMethod -Uri $webhook -Method Post -Body $payload -ContentType "application/json"
 
-    $knownIds += $game.id
+    # Zapis stanu
+    $knownGames[$game.id] = $game.title
 }
 
-# ===== ZAPIS STATE =====
-$knownIds | ConvertTo-Json | Set-Content $stateFile -Encoding UTF8
+# ================== ZAPIS STATE.JSON ==================
+$knownGames | ConvertTo-Json -Depth 5 | Set-Content $stateFile -Encoding UTF8
 
 Write-Output "Zakończono. Nowe gry: $($newFreeGames.Count)"
