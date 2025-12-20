@@ -2,7 +2,7 @@ name: Epic Free Games to Discord
 
 on:
   schedule:
-    # codziennie 17:15 PL = 15:15 UTC
+    # Codziennie o 17:15 czasu PL (15:15 UTC)
     - cron: '15 15 * * *'
   workflow_dispatch:
 
@@ -11,23 +11,36 @@ jobs:
     runs-on: windows-latest
 
     steps:
+      # 1️⃣ Pobierz repozytorium
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Run PowerShell script
+      # 2️⃣ Uruchom skrypt PowerShell
+      - name: Run Epic Games script
         shell: pwsh
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
           ./epic.ps1
 
-      - name: Commit state
+      # 3️⃣ Commit i push state.json (jeśli jest zmiana)
+      - name: Commit state.json
         shell: pwsh
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
+
           if (Test-Path state.json) {
             git add state.json
-            git diff --cached --quiet || git commit -m "Update Epic Games state"
-            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+            # Sprawdź, czy są zmiany do commitowania
+            git diff --cached --quiet
+            if ($LASTEXITCODE -ne 0) {
+              git commit -m "Update Epic Games state"
+              git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+              Write-Output "state.json zaktualizowany i wypchnięty do repo"
+            } else {
+              Write-Output "Brak zmian w state.json, commit pominięty"
+            }
+          } else {
+            Write-Output "Nie znaleziono state.json, commit pominięty"
           }
