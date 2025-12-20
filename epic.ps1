@@ -1,118 +1,112 @@
 $ErrorActionPreference = "Stop"
 
+# ===== KONFIGURACJA =====
 $webhook = $env:DISCORD_WEBHOOK
-$api = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=pl&country=PL"
-$stateFile = "state.json"
-
-# ===== Wczytaj poprzedni stan =====
-if (Test-Path $stateFile) {
-    $state = Get-Content $stateFile | ConvertFrom-Json
-    Write-Output "Wczytano state.json z $($state.current.Count) current i $($state.upcoming.Count) upcoming"
-} else {
-    $state = @{
-        current = @()
-        upcoming = @()
-    }
-    Write-Output "Nie znaleziono state.json, utworzono nowy stan"
+if (-not $webhook) {
+    Write-Error "Brak zmiennej DISCORD_WEBHOOK"
+    exit 1
 }
 
-# ===== Pobierz dane z Epic =====
-$data = Invoke-RestMethod -Uri $api
+$stateFile = "state.json"
+$knownIds = @()
+
+if (Test-Path $stateFile) {
+    $knownIds = Get-Content $stateFile | ConvertFrom-Json
+    if ($null -eq $knownIds) { $knownIds = @() }
+}
+
+# ===== POBRANIE DANYCH Z EPIC =====
+$url = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=pl&country=PL&allowCountries=PL"
+$data = Invoke-RestMethod -Uri $url -Method Get
+
 $games = $data.data.Catalog.searchStore.elements
 $now = Get-Date
 
-Write-Output ("Znaleziono {0} gier w API" -f $games.Count)
-
-$current = @()
-$upcoming = @()
+$newFreeGames = @()
 
 foreach ($game in $games) {
-    Write-Output ("Sprawdzam grę: {0}" -f $game.title)
+    Write-Output "Sprawdzam grę: $($game.title)"
 
-    # Pomijamy tylko DLC, reszta typów jest dopuszczona
-    if ($game.offerType -eq "DLC") { 
+    # Pomijamy DLC
+    if ($game.offerType -eq "DLC") {
         Write-Output "  Pomijam – DLC"
         continue
     }
 
-    if (-not $game.price) { 
-        Write-Output "  Pomijam – brak ceny"
-        continue
-    }
-
-    $price = $game.price.totalPrice
-    # Uwzględniamy floaty w 100% zniżce
-    if ([math]::Round($price.discountPercentage) -ne 100 -or $price.discountPrice -ne 0) {
-        Write-Output "  Pomijam – nie 100% OFF"
-        continue
-    }
-
-    if ($null -eq $game.promotions) { 
+    $promotions = $game.promotions.promotionalOffers
+    if (-not $promotions) {
         Write-Output "  Pomijam – brak promocji"
         continue
     }
 
-    # Pobierz wszystkie promocje (standard + upcoming + holiday)
-    $allPromos = @()
-    if ($game.promotions.promotionalOffers) { $allPromos += $game.promotions.promotionalOffers.promotionalOffers }
-    if ($game.promotions.upcomingPromotionalOffers) { $allPromos += $game.promotions.upcomingPromotionalOffers.promotionalOffers }
+    foreach ($promoBlock in $promotions) {
+        foreach ($promo in $promoBlock.promotionalOffers) {
 
-    if ($allPromos.Count -eq 0) { 
-        Write-Output "  Pomijam – brak aktywnych promocji"
-        continue
-    }
+            $start = Get-Date $promo.startDate
+            $end   = Get-Date $promo.endDate
 
-    foreach ($offer in $allPromos) {
-        $start = Get-Date $offer.startDate
-        $end = Get-Date $offer.endDate
+            if ($now -lt $start -or $now -gt $end) {
+                continue
+            }
 
-        if ($now -ge $start -and $now -le $end) {
-            Write-Output "  Dodano do current"
-            $current += $game
-        } elseif ($now -lt $start) {
-            Write-Output "  Dodano do upcoming"
-            $upcoming += $game
+            $price = $game.price.totalPrice
+            if (-not $price) {
+                continue
+            }
+
+            if ($price.discountPrice -ne 0) {
+                Write-Output "  Pomijam – cena końcowa ≠ 0"
+                continue
+            }
+
+            if ($knownIds -contains $game.id) {
+                Write-Output "  Pomijam – już wysłana"
+                continue
+            }
+
+            Write-Output "  ✔ NOWA DARMOWA GRA"
+            $newFreeGames += $game
         }
     }
 }
 
-# ===== Filtruj tylko nowe gry względem state.json =====
-$newCurrent = $current | Where-Object { $_.id -notin $state.current }
-$newUpcoming = $upcoming | Where-Object { $_.id -notin $state.upcoming }
+# ===== WYSYŁKA NA DISCORD =====
+foreach ($game in $newFreeGames) {
 
-Write-Output ("Nowe current: {0}, nowe upcoming: {1}" -f $newCurrent.Count, $newUpcoming.Count)
-
-if ($newCurrent.Count -eq 0 -and $newUpcoming.Count -eq 0) {
-    Write-Output "Brak nowych gier do wysłania"
-    exit 0
-}
-
-# ===== Tworzenie wiadomości =====
-$msg = ""
-
-if ($newCurrent.Count -gt 0) {
-    $msg += "**🎮 Darmowe gry do odebrania (0 zł):**`n`n"
-    foreach ($g in $newCurrent) {
-        $url = "https://store.epicgames.com/pl/p/$($g.productSlug)"
-        $msg += "• **$($g.title)**`n$url`n`n"
+    $slug = $game.productSlug
+    if (-not $slug) {
+        $slug = $game.urlSlug
     }
-}
 
-if ($newUpcoming.Count -gt 0) {
-    $msg += "**⏳ Nadchodzące darmowe gry:**`n`n"
-    foreach ($g in $newUpcoming) {
-        $url = "https://store.epicgames.com/pl/p/$($g.productSlug)"
-        $msg += "• **$($g.title)**`n$url`n`n"
+    $link = "https://store.epicgames.com/pl/p/$slug"
+
+    $image = $null
+    foreach ($img in $game.keyImages) {
+        if ($img.type -eq "OfferImageWide") {
+            $image = $img.url
+            break
+        }
     }
+
+    $payload = @{
+        embeds = @(
+            @{
+                title = "Darmowa gra na Epic Games"
+                description = "**$($game.title)** jest teraz dostępna **ZA DARMO**"
+                url = $link
+                color = 5763719
+                image = @{ url = $image }
+                footer = @{ text = "Epic Games Store" }
+            }
+        )
+    } | ConvertTo-Json -Depth 10
+
+    Invoke-RestMethod -Uri $webhook -Method Post -Body $payload -ContentType "application/json"
+
+    $knownIds += $game.id
 }
 
-# ===== Wyślij wiadomość na Discord =====
-Invoke-RestMethod -Uri $webhook -Method Post -ContentType "application/json" -Body (@{
-    content = $msg
-} | ConvertTo-Json)
+# ===== ZAPIS STATE =====
+$knownIds | ConvertTo-Json | Set-Content $stateFile -Encoding UTF8
 
-# ===== Zapisz stan =====
-$state.current = $current.id
-$state.upcoming = $upcoming.id
-$state | ConvertTo-Json | Set-Content $stateFile
-Write-Output "Zaktualizowano state.json z {0} current i {1} upcoming" -f $current.Count, $upcoming.Count
+Write-Output "Zakończono. Nowe gry: $($newFreeGames.Count)"
