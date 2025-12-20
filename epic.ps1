@@ -29,16 +29,19 @@ $upcoming = @()
 foreach ($game in $games) {
     Write-Output ("Sprawdzam grę: {0}" -f $game.title)
 
-    if ($game.offerType -notin @("BASE_GAME","PACKAGE")) { 
-        Write-Output "  Pomijam – nie BASE_GAME ani PACKAGE"
+    # Pomijamy tylko DLC, reszta typów jest dopuszczona
+    if ($game.offerType -eq "DLC") { 
+        Write-Output "  Pomijam – DLC"
         continue
     }
+
     if (-not $game.price) { 
         Write-Output "  Pomijam – brak ceny"
         continue
     }
 
     $price = $game.price.totalPrice
+    # Uwzględniamy floaty w 100% zniżce
     if ([math]::Round($price.discountPercentage) -ne 100 -or $price.discountPrice -ne 0) {
         Write-Output "  Pomijam – nie 100% OFF"
         continue
@@ -49,18 +52,20 @@ foreach ($game in $games) {
         continue
     }
 
+    # Pobierz wszystkie promocje (standard + upcoming + holiday)
     $allPromos = @()
     if ($game.promotions.promotionalOffers) { $allPromos += $game.promotions.promotionalOffers.promotionalOffers }
     if ($game.promotions.upcomingPromotionalOffers) { $allPromos += $game.promotions.upcomingPromotionalOffers.promotionalOffers }
 
     if ($allPromos.Count -eq 0) { 
-        Write-Output "  Pomijam – brak aktywnych promocji w polach promotionalOffers"
+        Write-Output "  Pomijam – brak aktywnych promocji"
         continue
     }
 
     foreach ($offer in $allPromos) {
         $start = Get-Date $offer.startDate
         $end = Get-Date $offer.endDate
+
         if ($now -ge $start -and $now -le $end) {
             Write-Output "  Dodano do current"
             $current += $game
