@@ -98,11 +98,10 @@ foreach ($item in $newFreeGames) {
                 color = 3066993
                 description = @"
 **$($game.title)**
-
- **Cena:** Darmowa  
  **Dostępna do:** $endText  
 
- Kliknij tytuł lub grafikę, aby odebrać grę
+ *Kliknij tytuł, aby odebrać grę*
+ *link przenosi do strony, nie aplikacji*
 "@
                 image = @{ url = $image }
                 footer = @{
