@@ -104,7 +104,7 @@ foreach ($item in $newFreeGames) {
                 url   = $epicLink
                 color = 3447003
                 description = @"
-**Kliknij tytuł powyżej, aby przejść do strony gry**
+👆👆👆👆👆
 
 **Darmowa do:** $endText  
 
