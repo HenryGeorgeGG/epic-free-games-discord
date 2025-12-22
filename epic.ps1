@@ -9,14 +9,19 @@ if (-not $webhook) {
 
 $stateFile = "state.json"
 
-# ================== WCZYTANIE STANU ==================
+# ================== WCZYTANIE STANU (HASHTABLE) ==================
 $knownGames = @{}
+
 if (Test-Path $stateFile) {
-    $knownGames = Get-Content $stateFile | ConvertFrom-Json
-    if ($null -eq $knownGames) { $knownGames = @{} }
+    $json = Get-Content $stateFile | ConvertFrom-Json
+    if ($json) {
+        foreach ($prop in $json.PSObject.Properties) {
+            $knownGames[$prop.Name] = $prop.Value
+        }
+    }
 }
 
-# ================== POBRANIE DANYCH ==================
+# ================== POBRANIE DANYCH Z EPIC ==================
 $url = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=pl&country=PL&allowCountries=PL"
 $data = Invoke-RestMethod -Uri $url -Method Get
 
@@ -60,7 +65,7 @@ foreach ($game in $games) {
                 continue
             }
 
-            Write-Output "NOWA DARMOWA GRA"
+            Write-Output "  ✔ NOWA DARMOWA GRA"
             $newFreeGames += @{
                 Game = $game
                 End  = $end
@@ -78,8 +83,11 @@ foreach ($item in $newFreeGames) {
     $slug = $game.productSlug
     if (-not $slug) { $slug = $game.urlSlug }
 
-    $link = "https://store.epicgames.com/pl/p/$slug"
+    $epicLink = "https://store.epicgames.com/pl/p/$slug"
     $endText = $end.ToString("dd.MM.yyyy HH:mm")
+
+    $steamSearch = "https://store.steampowered.com/search/?term=" + `
+        [System.Web.HttpUtility]::UrlEncode($game.title)
 
     $image = $null
     foreach ($img in $game.keyImages) {
@@ -89,21 +97,27 @@ foreach ($item in $newFreeGames) {
         }
     }
 
-    # ===== ŁADNY EMBED =====
     $payload = @{
         embeds = @(
             @{
-                title = "Darmowa gra na Epic Games Store"
-                url = $link
-                color = 3066993
+                title = "🎮 $($game.title)"
+                url   = $epicLink
+                color = 3447003
                 description = @"
-**$($game.title)**
- **Dostępna do:** $endText  
+👆 **Kliknij tytuł powyżej, aby przejść do strony gry**
 
- *Kliknij tytuł, aby odebrać grę*
- *link przenosi do strony, nie aplikacji*
+⏰ **Darmowa do:** $endText  
+
+*Kliknij tytuł gry powyżej, aby przejść do Epic Games Store*
 "@
                 image = @{ url = $image }
+                fields = @(
+                    @{
+                        name  = "🔗 Linki"
+                        value = "[Epic Games Store]($epicLink)`n[Steam – wyszukiwanie]($steamSearch)"
+                        inline = $false
+                    }
+                )
                 footer = @{
                     text = "Epic Games Store • Darmowe gry"
                 }
@@ -114,11 +128,10 @@ foreach ($item in $newFreeGames) {
 
     Invoke-RestMethod -Uri $webhook -Method Post -Body $payload -ContentType "application/json"
 
-    # Zapis stanu
     $knownGames[$game.id] = $game.title
 }
 
-# ================== ZAPIS STATE.JSON ==================
+# ================== ZAPIS STATE ==================
 $knownGames | ConvertTo-Json -Depth 5 | Set-Content $stateFile -Encoding UTF8
 
 Write-Output "Zakończono. Nowe gry: $($newFreeGames.Count)"
