@@ -100,20 +100,20 @@ foreach ($item in $newFreeGames) {
     $payload = @{
         embeds = @(
             @{
-                title = "🎮 $($game.title)"
+                title = "$($game.title)"
                 url   = $epicLink
                 color = 3447003
                 description = @"
-👆 **Kliknij tytuł powyżej, aby przejść do strony gry**
+**Kliknij tytuł powyżej, aby przejść do strony gry**
 
-⏰ **Darmowa do:** $endText  
+**Darmowa do:** $endText  
 
 *Kliknij tytuł gry powyżej, aby przejść do Epic Games Store*
 "@
                 image = @{ url = $image }
                 fields = @(
                     @{
-                        name  = "🔗 Linki"
+                        name  = "Linki"
                         value = "[Epic Games Store]($epicLink)`n[Steam – wyszukiwanie]($steamSearch)"
                         inline = $false
                     }
