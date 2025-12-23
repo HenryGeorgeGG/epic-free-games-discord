@@ -3,12 +3,12 @@ name: Epic Free Games to Discord
 on:
   schedule:
     # GitHub Actions działa w UTC
-    # 15:00–19:00 czasu polskiego (PL)
-    - cron: '0 13 * * *' # 15:00 PL
-    - cron: '0 14 * * *' # 16:00 PL
-    - cron: '0 15 * * *' # 17:00 PL (główne okno Epic)
-    - cron: '0 16 * * *' # 18:00 PL
-    - cron: '0 17 * * *' # 19:00 PL
+    # Sprawdzanie 15 minut po każdej godzinie (15:15–19:15 PL)
+    - cron: '15 13 * * *' # 15:15 PL
+    - cron: '15 14 * * *' # 16:15 PL
+    - cron: '15 15 * * *' # 17:15 PL (najważniejsze)
+    - cron: '15 16 * * *' # 18:15 PL
+    - cron: '15 17 * * *' # 19:15 PL
   workflow_dispatch:
 
 jobs:
